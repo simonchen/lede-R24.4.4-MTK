@@ -1,0 +1,10 @@
+###src-git packages https://github.com/coolsnowwolf/packages
+src-git packages https://github.com/simonchen/packages
+src-git luci https://github.com/simonchen/luci
+src-git routing https://github.com/coolsnowwolf/routing
+src-git telephony https://git.openwrt.org/feed/telephony.git
+###src-git helloworld https://github.com/fw876/helloworld.git
+src-git helloworld https://github.com/simonchen/helloworld.git
+src-git lienol https://github.com/simonchen/openwrt-package.git;main
+#src-git mtk https://github.com/Nossiac/mtk-openwrt-feeds;lede-17.01
+

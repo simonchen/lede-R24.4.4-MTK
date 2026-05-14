@@ -1,0 +1,9 @@
+#!/bin/sh
+case "$ACTION" in
+ifup)
+sleep 2
+/etc/init.d/set-irq-affinity restart
+logger -t "hotplug-irq" "Interface $INTERFACE ($DEVICE) is up, applying IRQ affinity."
+;;
+esac
+
