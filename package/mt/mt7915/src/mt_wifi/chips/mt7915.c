@@ -95,7 +95,7 @@ const struct hif_pci_tx_ring_desc tx_ring_layout[] = {
 	{
 	 .hw_desc_base = MT_DMA1_T18_RING_BASE,
 	 .hw_int_mask = MT_INT_DMA1_T18_DONE,
-	 .ring_size = 2048,
+	 .ring_size = 4096, //2048,
 	 .ring_attr = HIF_TX_DATA,
 	 .band_idx = BAND0,
 	 .ring_info = "band0 TXD"
@@ -103,7 +103,7 @@ const struct hif_pci_tx_ring_desc tx_ring_layout[] = {
 	{
 	 .hw_desc_base = MT_DMA1_T19_RING_BASE,
 	 .hw_int_mask = MT_INT_DMA1_T19_DONE,
-	 .ring_size = 2048,
+	 .ring_size = 4096, //2048,
 	 .ring_attr = HIF_TX_DATA,
 	 .band_idx = BAND1,
 	 .ring_info = "band1 TXD"
@@ -240,7 +240,7 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	{
 	 .hw_desc_base = MT_DMA0_R0_RING_BASE,
 	 .hw_int_mask = MT_INT_DMA0_R0_DONE,
-	 .ring_size = 1536,
+	 .ring_size = 4096, //1536,
 	 .ring_attr = HIF_RX_DATA,
 	 .delay_int_en = TRUE,
 	 .dl_dly_ctl_tbl = dly_ctl_dl_tbl_hostdma0_r0,
@@ -249,8 +249,8 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	 .ul_dly_ctl_tbl = dly_ctl_ul_tbl_hostdma0_r0,
 	 .ul_dly_ctl_tbl_size = sizeof(dly_ctl_ul_tbl_hostdma0_r0)
 							/ sizeof(dly_ctl_ul_tbl_hostdma0_r0[0]),
-	 .max_rx_process_cnt = 128,
-	 .max_sw_read_idx_inc = 128,
+	 .max_rx_process_cnt = 256, //128,
+	 .max_sw_read_idx_inc = 256, //128,
 	 .buf_type = DYNAMIC_PAGE_ALLOC,
 	 .band_idx = BAND0_RX_PCIE0,
 	 .ring_info = "band0 RX data"
@@ -258,7 +258,7 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	{
 	 .hw_desc_base = MT_DMA0_R1_RING_BASE,
 	 .hw_int_mask = MT_INT_DMA0_R1_DONE,
-	 .ring_size = 1536,
+	 .ring_size = 4096, //1536,
 	 .ring_attr = HIF_RX_DATA,
 	 .delay_int_en = TRUE,
 	 .dl_dly_ctl_tbl = dly_ctl_dl_tbl_hostdma0_r1,
@@ -267,8 +267,8 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	 .ul_dly_ctl_tbl = dly_ctl_ul_tbl_hostdma0_r1,
 	 .ul_dly_ctl_tbl_size = sizeof(dly_ctl_ul_tbl_hostdma0_r1)
 							/ sizeof(dly_ctl_ul_tbl_hostdma0_r1[0]),
-	 .max_rx_process_cnt = 128,
-	 .max_sw_read_idx_inc = 128,
+	 .max_rx_process_cnt = 256, //128,
+	 .max_sw_read_idx_inc = 256, //128,
 	 .buf_type = DYNAMIC_PAGE_ALLOC,
 	 .band_idx = BAND1_RX_PCIE0,
 	 .ring_info = "band1 RX data"
