@@ -9,6 +9,19 @@
 	compatible = "c-life,xg1", "mediatek,mt7621-soc";
 	model = "C-Life XG1";
 
+        reserved-memory {
+                #address-cells = <1>;
+                #size-cells = <1>;
+                ranges;
+
+                mt76_dma_reserved: buffer@08000000 {
+                        compatible = "shared-dma-pool";
+                        size = <0x00200000>; /* 2MB */
+                        alloc-ranges = <0x08000000 0x04000000>;
+                        no-map;
+                };
+        };
+
 	aliases {
 		led-boot = &led_status_red;
 		led-failsafe = &led_status_red;
@@ -116,6 +129,7 @@
 		compatible = "mediatek,mt76";
 		reg = <0x0000 0 0 0 0>;
 		mediatek,mtd-eeprom = <&factory 0x0>;
+		memory-region = <&mt76_dma_reserved>;
 	};
 };
 
