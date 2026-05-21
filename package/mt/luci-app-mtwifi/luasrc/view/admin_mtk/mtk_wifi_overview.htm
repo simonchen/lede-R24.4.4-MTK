@@ -234,6 +234,8 @@ table {
 					<th><div class="b1">MCS (T/R)</div></th>
 					<th><div class="b1">GI (T/R)</div></th>
 					<th><div class="b1">Rate (T/R)</div></th>
+					<th><div class="b1">Wcid</div></th>
+                                        <th><div class="b1">Mmps mode</div></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -246,6 +248,22 @@ table {
 					<td><div class="b1"><%=MCS%></div></td>
 					<td><div class="b1" id="SGI"><%=SGI%></div></td>
 					<td><div class="b1" id="Rate"><%=Rate%></div></td>
+					<td><div class="b1" id="Wcid"><%
+local wcid = ""
+local sta_table = mtkwifis.refresh_sta_table() or {}
+for _, raw_mac in ipairs(string.split(MAC, "\n")) do
+	local cur_mac = raw_mac:gsub("%s+", ""):upper()
+	local util = require("luci.util")
+	wcid = wcid .. sta_table[cur_mac].wcid .. "\n"
+end%><%=wcid%></div></td>
+                                        <td><div class="b1" id="Mmps"><%
+local mmps = ""
+-- local sta_table = mtkwifis.refresh_sta_table() or {}
+for _, raw_mac in ipairs(string.split(MAC, "\n")) do
+        local cur_mac = raw_mac:gsub("%s+", ""):upper()
+        local util = require("luci.util")
+        mmps = mmps .. sta_table[cur_mac].mmps_mode .. "\n"
+end%><%=mmps%></div></td>
 				</tr>
 			</tbody>
 		</table>

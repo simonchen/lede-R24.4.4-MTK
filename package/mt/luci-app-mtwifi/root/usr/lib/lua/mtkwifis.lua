@@ -27,6 +27,51 @@ function mtkwifis.exists(path)
 end
 
 os.execute("dmesg -c > /dev/null && iwpriv ra0 show stainfo 2>/dev/null; iwpriv rax0 show stainfo 2>/dev/null")
+-- local log_stream = mtkwifis.read_pipe("dmesg 2>/dev/null") or ""
+
+function mtkwifis.refresh_sta_table()
+
+	local log_stream = mtkwifis.read_pipe("dmesg 2>/dev/null") or ""
+	local sta_table = {}
+	local active_mac = nil
+        local data_index = 0
+
+	for line in log_stream:gmatch("[^\n]+") do
+		local found_mac = line:match("([A-Z0-9]%S+:[A-Z0-9]%S+:[A-Z0-9]%S+:[A-Z0-9]%S+:[A-Z0-9]%S+:[A-Z0-9]%S+)")
+		
+		if found_mac then
+			-- 💥 状态机触发：抓到了新的 MAC 地址，立刻激活追踪，重置格子计数器
+			active_mac = found_mac
+			data_index = 0
+			sta_table[active_mac] = {}
+		elseif active_mac then
+			local pure_num = line:match("%-?%d+$") or line:match("%-?%d+%s*$")
+			
+			if pure_num then
+				data_index = data_index + 1
+				local num_val = tonumber(pure_num)
+				
+				-- 严格按照你给出的 6 行物理 printk 相对垂直顺序，直接定点精准收割！
+				if data_index == 1 then
+					sta_table[active_mac].aid = num_val       -- 第1行数字 -> Aid
+				elseif data_index == 2 then
+					sta_table[active_mac].wcid = num_val      -- 第2行数字 -> wcid (你的 AX211 座位号！)
+				elseif data_index == 3 then
+					sta_table[active_mac].func_idx = num_val  -- 第3行数字 -> func_tb_idx
+				elseif data_index == 4 then
+					sta_table[active_mac].ps_mode = num_val   -- 第4行数字 -> PsMode
+				elseif data_index == 5 then
+					sta_table[active_mac].wmm_cap = num_val   -- 第5行数字 -> WMM Cap
+				elseif data_index == 6 then
+					sta_table[active_mac].mmps_mode = num_val -- 第6行数字 -> MmpsMode (致命的降档省电标志！)
+					active_mac = nil -- 💥 6个核心数据全部精准安全收割，平滑关闭当前网卡追踪器
+				end
+			end
+		end
+	end
+
+	return sta_table
+end
 
 if not mtkwifis.exists("/etc/wireless/mt7603/") then -- MT7615
 	MAC = mtkwifis.read_pipe("dmesg | grep -oE '([A-Z0-9]{2}:){5}..' 2>/dev/null") or "?"
