@@ -1722,7 +1722,7 @@ static struct {
 #ifdef MT_MAC
 	{"hera",                    Set_Hera_Proc}, /* HERA general purpose */
 	{"PtecPerPpduDis",          SetHeraProtectionPerPpduDis},
-#ifdef DBG
+//#ifdef DBG
 	{"FixedRate",				Set_Fixed_Rate_Proc},
 	{"FixedRateWoSTA",          Set_Fixed_Rate_WO_STA_Proc},
 	{"FixedRateFallback",		Set_Fixed_Rate_With_FallBack_Proc},
@@ -1745,7 +1745,7 @@ static struct {
 	{"AutoRateUl",              Set_UL_AutoRate_Update},
 	{"AutoRatePerBSS",			Set_AutoRate_PerBss_Update},
 	{"FixedSpe",                 Set_Fixed_Spe_Update},
-#endif /* DBG */
+//#endif /* DBG */
 #endif /* MT_MAC */
 
 #ifdef STREAM_MODE_SUPPORT
