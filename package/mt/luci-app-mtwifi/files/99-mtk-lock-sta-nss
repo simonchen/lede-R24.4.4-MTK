@@ -40,7 +40,13 @@ if [ "$ACTION" = "add" ] || [ "$ACTION" = "update" ] || [ "$ACTION" = "old" ]; t
 			mac != "" && found_wcid == 1 && found_bw == 1 {
 				nss_lock = "1"
 				if (match($0, /[1-9]S-M/)) { 
-					nss_lock = substr($0, RSTART, 1) + 0 
+					nss_lock = substr($0, RSTART, 1) + 0
+					$0 = substr($0, RSTART + RLENGTH)  
+					while (match($0, /[1-9]S-M/)) {
+						val = substr($0, RSTART, 1) + 0
+						if (val > nss_lock) nss_lock = val
+						$0 = substr($0, RSTART + RLENGTH)
+					}
 				} else if (match($0, /-?[0-9]+[[:space:]]*$/)) {
 					val = substr($0, RSTART, RLENGTH) + 0
 					if (val > 0) {
