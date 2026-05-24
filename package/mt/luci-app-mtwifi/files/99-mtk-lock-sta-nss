@@ -52,6 +52,12 @@ if [ "$ACTION" = "add" ] || [ "$ACTION" = "update" ] || [ "$ACTION" = "old" ]; t
 					cmd = "iwpriv " iface " set FixedVhtNss=" wcid "-" nss_lock
 					system("logger -t mtk-lock-sta-nss [" mac "] \"Executing: " cmd "\"")
 					system(cmd " >/dev/null 2>&1")
+					cmd = "iwpriv " iface " set AutoRate=" wcid
+                                        system("logger -t mtk-lock-sta-nss [" mac "] \"Executing: " cmd "\"")
+                                        system(cmd " >/dev/null 2>&1")
+					cmd = "iwpriv " iface " set AutoRateUl=" wcid
+                                        system("logger -t mtk-lock-sta-nss [" mac "] \"Executing: " cmd "\"")
+                                        system(cmd " >/dev/null 2>&1")
 				}
 				mac = ""
 			}
