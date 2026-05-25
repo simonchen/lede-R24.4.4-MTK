@@ -510,6 +510,7 @@ INT Show_Diag_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 
 INT show_timer_list(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 INT show_wtbl_state(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT reset_wtbl(RTMP_ADAPTER *pAd, RTMP_STRING *arg); // simonchen
 
 INT show_radio_info_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 
@@ -2603,6 +2604,7 @@ static struct {
 #ifdef CUSTOMER_VENDOR_IE_SUPPORT
 	{"vie",			Set_Customer_Vie_Proc},
 #endif /*CUSTOMER_VENDOR_IE_SUPPORT*/
+	{"reset_wtbl",	reset_wtbl},
 	{NULL,}
 };
 
@@ -2613,7 +2615,7 @@ static struct {
 #ifdef ACL_BLK_COUNT_SUPPORT
 	{"ACLRejectCount",				Show_ACLRejectCount_Proc},
 #endif/*ACL_BLK_COUNT_SUPPORT*/
-	{"stainfo",			Show_MacTable_Proc},
+	{"stainfo",			Show_MacTable_Proc_hack},
 	{"partial_mib_info",		Show_Mib_Info_Proc},
 #ifdef TXRX_STAT_SUPPORT
 	{"sta_stat",			Show_Sta_Stat_Proc},
@@ -3229,6 +3231,20 @@ INT RTMPAPPrivIoctlShow(
 		for (PRTMP_PRIVATE_SHOW_PROC = RTMP_PRIVATE_SHOW_SUPPORT_PROC; PRTMP_PRIVATE_SHOW_PROC->name;
 			 PRTMP_PRIVATE_SHOW_PROC++) {
 			if (rtstrcasecmp(this_char, PRTMP_PRIVATE_SHOW_PROC->name) == TRUE) {
+				if (rtstrcasecmp(this_char, "stainfo") == TRUE) { // simonchen [stainfo / hacking the string pointer]
+					RTMP_VALUE v;
+					RTMP_STRING *tmp = value;
+					v.arg = tmp;
+					v.wrq = pIoctlCmdStr;
+					value = (RTMP_STRING*)&v;
+
+					if (!PRTMP_PRIVATE_SHOW_PROC->set_proc(pAd, value)) {
+                                        	/*FALSE:Set private failed then return Invalid argument */
+                                        	Status = -EINVAL;
+                                	}
+					break;
+				}
+
 				if (!PRTMP_PRIVATE_SHOW_PROC->set_proc(pAd, value)) {
 					/*FALSE:Set private failed then return Invalid argument */
 					Status = -EINVAL;

@@ -5,10 +5,10 @@ if [ "$ACTION" = "add" ] || [ "$ACTION" = "update" ] || [ "$ACTION" = "old" ]; t
 
 	lock_interface() {
 		local ifname=$1
-		dmesg -c > /dev/null
-		iwpriv "$ifname" show stainfo > /dev/null 2>&1
-		
-		dmesg | awk -v iface="$ifname" '
+		#dmesg -c > /dev/null
+		stainfo=$(iwpriv "$ifname" show stainfo 2>/dev/null)
+		#echo "$stainfo"
+		echo "$stainfo" | awk -v iface="$ifname" '
 			/([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}/ {
 				match($0, /([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}/)
 				mac = toupper(substr($0, RSTART, RLENGTH))
