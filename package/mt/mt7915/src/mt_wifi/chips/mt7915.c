@@ -158,12 +158,12 @@ static struct dly_ctl_cfg dly_ctl_dl_tbl_hostdma0_r0[] = {
 	},
 /* COPY from above ul_tbl_xxx */
         {
-         .avg_tp = 300,
+         .avg_tp = 150,
          .dly_number = 24,
          .dly_time = 20
         },
         {
-         .avg_tp = 500,
+         .avg_tp = 240,
          .dly_number = 48,
          .dly_time = 27
         }
@@ -200,7 +200,7 @@ static struct dly_ctl_cfg dly_ctl_dl_tbl_hostdma0_r1[] = {
          .dly_time = 20
         },
         {
-         .avg_tp = 300,
+         .avg_tp = 240,
          .dly_number = 48,
          .dly_time = 27
         }
@@ -233,12 +233,12 @@ static struct dly_ctl_cfg dly_ctl_dl_tbl_hostdma1_r1[] = {
 /* COPY from above ul_tbl_xxx */
         {
          .avg_tp = 150,
-         .dly_number = 8,
+         .dly_number = 12,
          .dly_time = 7
         },
         {
-         .avg_tp = 300,
-         .dly_number = 16,
+         .avg_tp = 240,
+         .dly_number = 24,
          .dly_time = 8
         }
 };
@@ -270,12 +270,12 @@ static struct dly_ctl_cfg dly_ctl_dl_tbl_hostdma1_r2[] = {
 /* COPY from above ul_tbl_xxx */
         {
          .avg_tp = 150,
-         .dly_number = 8,
+         .dly_number = 12,
          .dly_time = 7
         },
         {
-         .avg_tp = 300,
-         .dly_number = 16,
+         .avg_tp = 240,
+         .dly_number = 24,
          .dly_time = 8
         }
 };
@@ -284,7 +284,7 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	{
 	 .hw_desc_base = MT_DMA0_R0_RING_BASE,
 	 .hw_int_mask = MT_INT_DMA0_R0_DONE,
-	 .ring_size = 3072,//1536,
+	 .ring_size = 1536,
 	 .ring_attr = HIF_RX_DATA,
 	 .delay_int_en = TRUE,
 	 .dl_dly_ctl_tbl = dly_ctl_dl_tbl_hostdma0_r0,
@@ -293,8 +293,8 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	 .ul_dly_ctl_tbl = dly_ctl_ul_tbl_hostdma0_r0,
 	 .ul_dly_ctl_tbl_size = sizeof(dly_ctl_ul_tbl_hostdma0_r0)
 							/ sizeof(dly_ctl_ul_tbl_hostdma0_r0[0]),
-	 .max_rx_process_cnt = 256,//128,
-	 .max_sw_read_idx_inc = 256,//128,
+	 .max_rx_process_cnt = 128,
+	 .max_sw_read_idx_inc = 128,
 	 .buf_type = DYNAMIC_PAGE_ALLOC,
 	 .band_idx = BAND0_RX_PCIE0,
 	 .ring_info = "band0 RX data"
@@ -302,7 +302,7 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	{
 	 .hw_desc_base = MT_DMA0_R1_RING_BASE,
 	 .hw_int_mask = MT_INT_DMA0_R1_DONE,
-	 .ring_size = 3072,//1536,
+	 .ring_size = 1536,
 	 .ring_attr = HIF_RX_DATA,
 	 .delay_int_en = TRUE,
 	 .dl_dly_ctl_tbl = dly_ctl_dl_tbl_hostdma0_r1,
@@ -311,8 +311,8 @@ const struct hif_pci_rx_ring_desc rx_ring_layout[] = {
 	 .ul_dly_ctl_tbl = dly_ctl_ul_tbl_hostdma0_r1,
 	 .ul_dly_ctl_tbl_size = sizeof(dly_ctl_ul_tbl_hostdma0_r1)
 							/ sizeof(dly_ctl_ul_tbl_hostdma0_r1[0]),
-	 .max_rx_process_cnt = 256,//128,
-	 .max_sw_read_idx_inc = 256,//128,
+	 .max_rx_process_cnt = 128,
+	 .max_sw_read_idx_inc = 128,
 	 .buf_type = DYNAMIC_PAGE_ALLOC,
 	 .band_idx = BAND1_RX_PCIE0,
 	 .ring_info = "band1 RX data"
@@ -406,7 +406,7 @@ static struct dly_ctl_cfg dly_ctl_dl_tbl_hostdma0_r1_pcie1[] = {
          .dly_time = 20
         },
         {
-         .avg_tp = 300,
+         .avg_tp = 240,
          .dly_number = 48,
          .dly_time = 27
         }
@@ -443,7 +443,7 @@ static struct dly_ctl_cfg dly_ctl_dl_tbl_hostdma1_r2_pcie1[] = {
          .dly_time = 7
         },
         {
-         .avg_tp = 300,
+         .avg_tp = 240,
          .dly_number = 16,
          .dly_time = 8
         }
@@ -453,7 +453,7 @@ const struct hif_pci_rx_ring_desc rx_ring_layout_pcie1[] = {
 	{
 	 .hw_desc_base = MT_PCI1_DMA0_R1_RING_BASE,
 	 .hw_int_mask = MT_INT1_DMA0_R1_DONE,
-	 .ring_size = 3072,//1536,
+	 .ring_size = 1536,
 	 .ring_attr = HIF_RX_DATA,
 	 .delay_int_en = TRUE,
 	 .dl_dly_ctl_tbl = dly_ctl_dl_tbl_hostdma0_r1_pcie1,
@@ -462,8 +462,8 @@ const struct hif_pci_rx_ring_desc rx_ring_layout_pcie1[] = {
 	 .ul_dly_ctl_tbl = dly_ctl_ul_tbl_hostdma0_r1_pcie1,
 	 .ul_dly_ctl_tbl_size = sizeof(dly_ctl_ul_tbl_hostdma0_r1_pcie1)
 							/ sizeof(dly_ctl_ul_tbl_hostdma0_r1_pcie1[0]),
-	 .max_rx_process_cnt = 256,//128,
-	 .max_sw_read_idx_inc = 256,//128,
+	 .max_rx_process_cnt = 128,
+	 .max_sw_read_idx_inc = 128,
 	 .buf_type = DYNAMIC_PAGE_ALLOC,
 	 .band_idx = BAND1_RX_PCIE1,
 	 .ring_info = "band1 data"
@@ -11865,8 +11865,8 @@ static VOID mt7915_chipCap_init(struct _RTMP_ADAPTER *pAd, RTMP_CHIP_CAP *chip_c
 #endif /* RACTRL_FW_OFFLOAD_SUPPORT */
 	chip_cap->qos.WmmHwNum = 4;
 	chip_cap->PDA_PORT = 0xf800;
-	chip_cap->ppdu.tx_amsdu_support = FALSE;//TRUE;
-	chip_cap->ppdu.rx_amsdu_in_ampdu_support = FALSE;//TRUE;
+	chip_cap->ppdu.tx_amsdu_support = TRUE;
+	chip_cap->ppdu.rx_amsdu_in_ampdu_support = TRUE;
 	chip_cap->APPSMode = APPS_MODE2;
 	chip_cap->CtParseLen = CT_PARSE_PAYLOAD_LEN ;
 	chip_cap->qm = FAST_PATH_QM;
