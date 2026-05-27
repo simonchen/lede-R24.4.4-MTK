@@ -1684,7 +1684,7 @@ INT	rtmp_set_channel(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR Channel)
 #endif
 				wdev->channel = OriChannel;
 				wdev_sync_prim_ch(wdev->sys_handle, wdev);
-#if (DFS_ZEROWAIT_DEFAULT_FLOW == 1)
+#if (defined(MT_DFS_SUPPORT) && (DFS_ZEROWAIT_DEFAULT_FLOW == 1)) // simonchen [Adding defined(MT_DFS_SUPPORT)]
 				/* if radar is detected during in-band ch switch, dev resets inband channel if new dfs ch is invalid */
 				if (pAd->CommonCfg.DfsParameter.bDedicatedZeroWaitDefault == 0)
 					return FALSE;
