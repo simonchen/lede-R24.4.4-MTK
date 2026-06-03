@@ -155,6 +155,10 @@ define Package/base-files/install
 		$(1)/etc/openwrt_version \
 		$(1)/usr/lib/os-release
 
+	if [ -s $(1)/etc/banner-custom ]; then \
+		$(VERSION_SED_SCRIPT) $(1)/etc/banner-custom ; \
+		mv $(1)/etc/banner-custom $(1)/etc/banner ; \
+	fi
 
 	$(SED) "s#%PATH%#$(TARGET_INIT_PATH)#g" \
 		$(1)/sbin/hotplug-call \
