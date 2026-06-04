@@ -1068,7 +1068,7 @@ TCP_BBR_SYSCTL_CONF:=sysctl-tcp-bbr.conf
 
 define KernelPackage/tcp-bbr/install
 	$(INSTALL_DIR) $(1)/etc/sysctl.d
-	$(INSTALL_DATA) ./files/$(TCP_BBR_SYSCTL_CONF) $(1)/etc/sysctl.d/12-tcp-bbr.conf
+#	$(INSTALL_DATA) ./files/$(TCP_BBR_SYSCTL_CONF) $(1)/etc/sysctl.d/12-tcp-bbr.conf
 endef
 
 $(eval $(call KernelPackage,tcp-bbr))
