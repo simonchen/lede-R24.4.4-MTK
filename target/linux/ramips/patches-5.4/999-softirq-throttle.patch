@@ -1,0 +1,372 @@
+--- a/init/Kconfig	2026-06-10 23:02:43.838376903 +0800
++++ a/init/Kconfig	2026-06-10 19:34:24.436437077 +0800
+@@ -2270,3 +2270,10 @@
+ # <asm/syscall_wrapper.h>.
+ config ARCH_HAS_SYSCALL_WRAPPER
+ 	def_bool n
++
++config SOFTIRQ_THROTTLE
++	bool "Softirq Throttling Feature for Weak CPUs"
++	default y
++	help
++	  允许为软中断分配每 CPU 最大带宽。专门对付无 NAPI 导致的单核自旋。
++	  可以通过 /proc/sys/kernel/softirq_period_ms 和 softirq_runtime_ms 调节。
+--- a/include/linux/interrupt.h	2024-03-27 06:23:12.000000000 +0800
++++ b/include/linux/interrupt.h	2026-06-10 19:32:38.274982413 +0800
+@@ -565,7 +565,12 @@
+ 
+ extern void raise_softirq_irqoff(unsigned int nr);
+ extern void raise_softirq(unsigned int nr);
+-
++#ifdef CONFIG_SOFTIRQ_THROTTLE
++extern unsigned int sysctl_softirq_period_ms;
++extern int sysctl_softirq_runtime_ms;
++int softirq_throttle_handler(struct ctl_table *table, int write, void *buffer,
++			     size_t *lenp, loff_t *ppos);
++#endif
+ DECLARE_PER_CPU(struct task_struct *, ksoftirqd);
+ 
+ static inline struct task_struct *this_cpu_ksoftirqd(void)
+--- a/kernel/softirq.c	2024-03-27 06:23:12.000000000 +0800
++++ b/kernel/softirq.c	2026-06-11 23:34:16.449488118 +0800
+@@ -61,6 +61,177 @@
+ 	"TASKLET", "SCHED", "HRTIMER", "RCU"
+ };
+ 
++#ifdef CONFIG_SOFTIRQ_THROTTLE
++unsigned int sysctl_softirq_period_ms = 1000;
++int sysctl_softirq_runtime_ms = 900;
++unsigned int sysctl_softirq_block_ms = 10;
++unsigned int sysctl_softirq_throttle_mask = 3; // BIT(0) 0x1: NET_TX_SOFTIRQ | BIT(1) 0x2: NET_RX_SOFTIRQ
++
++struct softirq_stats {
++	u64 block_cnt;
++	u64 free_cnt;
++};
++
++struct softnet_throttle_data {
++	u64 period;
++	u64 runtime;
++	raw_spinlock_t lock;
++} si_throttle;
++
++static DEFINE_PER_CPU(u64, si_time_start);
++static DEFINE_PER_CPU(u64, si_time_used);
++DEFINE_PER_CPU(u64, si_blocked_until);
++static DEFINE_PER_CPU(struct softirq_stats, softirq_stats_data);
++
++static int softirq_throttle_validate(void)
++{
++	if (((int)sysctl_softirq_period_ms <= 0) ||
++	    (sysctl_softirq_block_ms <= 0) ||
++	      (sysctl_softirq_block_ms > sysctl_softirq_period_ms) ||
++	    ((sysctl_softirq_runtime_ms != -1) &&
++	     ((unsigned int)sysctl_softirq_runtime_ms > sysctl_softirq_period_ms)) ||
++	    (sysctl_softirq_throttle_mask > 3))
++		return -EINVAL;
++	return 0;
++}
++
++static void softirq_throttle_update(void)
++{
++	unsigned long flags;
++	raw_spin_lock_irqsave(&si_throttle.lock, flags);
++	si_throttle.period = (u64)sysctl_softirq_period_ms * 1000000ULL;
++	si_throttle.runtime = (sysctl_softirq_runtime_ms == -1) ?
++		(u64)-1LL : (u64)sysctl_softirq_runtime_ms * 1000000ULL;
++	raw_spin_unlock_irqrestore(&si_throttle.lock, flags);
++}
++
++int softirq_throttle_handler(struct ctl_table *table, int write, void *buffer,
++			     size_t *lenp, loff_t *ppos)
++{
++	unsigned int old_period, old_runtime, old_block, old_mask;
++	static DEFINE_MUTEX(mutex);
++	int ret;
++
++	mutex_lock(&mutex);
++	old_period = sysctl_softirq_period_ms;
++	old_runtime = sysctl_softirq_runtime_ms;
++	old_block = sysctl_softirq_block_ms;
++	old_mask = sysctl_softirq_throttle_mask;
++
++	ret = proc_dointvec(table, write, buffer, lenp, ppos);
++	if (ret) goto undo;
++	if (!write) goto done;
++
++	ret = softirq_throttle_validate();
++	if (ret) goto undo;
++
++	softirq_throttle_update();
++	goto done;
++
++undo:
++	sysctl_softirq_period_ms = old_period;
++	sysctl_softirq_runtime_ms = old_runtime;
++	sysctl_softirq_block_ms = old_block;
++	sysctl_softirq_throttle_mask = old_mask;
++done:
++	mutex_unlock(&mutex);
++	return ret;
++}
++
++int sysctl_softirq_stats_handler(struct ctl_table *table, int write, void *buffer,
++				 size_t *lenp, loff_t *ppos)
++{
++	static DEFINE_MUTEX(stats_mutex);
++	int cpu; int ret;
++	char *buf;
++	int total_len = 1024;
++
++	if (write)
++		return -EPERM;
++
++	mutex_lock(&stats_mutex);
++	buf = kmalloc(total_len, GFP_KERNEL);
++	if (!buf) {
++		mutex_unlock(&stats_mutex);
++		return -ENOMEM;
++	}
++#define COLOR_GREEN	"\033[32m"
++#define COLOR_YELLOW	"\033[33m"
++#define COLOR_BLUE	"\033[36m"
++#define COLOR_RESTORE	"\033[0m"
++#define COLOR_WHITE	"\033[1m"
++
++	snprintf(buf, total_len, 
++		 COLOR_BLUE "=== Softirq Throttle Configuration ===\n" COLOR_RESTORE
++		 "throttle_mask *BIT(0) NET_TX_SOFTIRQ / *BIT(1) NET_RX_SOFTIRQ : " COLOR_WHITE "%u\n" COLOR_RESTORE
++		 "period_ms  : " COLOR_WHITE "%u ms\n" COLOR_RESTORE
++		 "runtime_ms : " COLOR_WHITE "%d ms\n" COLOR_RESTORE
++		 "block_ms   : " COLOR_WHITE "%u ms\n\n" COLOR_RESTORE
++		 COLOR_BLUE "=== Per-CPU Live Telemetry Stats ===\n" COLOR_RESTORE
++		 "cpu_id    blocked_count         freed_count\n",
++		 sysctl_softirq_throttle_mask,
++		 sysctl_softirq_period_ms, 
++		 sysctl_softirq_runtime_ms, 
++		 sysctl_softirq_block_ms);
++
++	for_each_possible_cpu(cpu) {
++		u64 b_cnt = per_cpu(softirq_stats_data, cpu).block_cnt;
++		u64 f_cnt = per_cpu(softirq_stats_data, cpu).free_cnt;
++
++		snprintf(buf + strlen(buf), total_len - strlen(buf), "cpu %d:    " COLOR_YELLOW "%-20llu" COLOR_GREEN "  %-20llu" COLOR_RESTORE "\n",
++			       cpu, b_cnt, f_cnt);
++	}
++
++	table->data = buf;
++	table->maxlen = strlen(buf) + 1;
++	ret = proc_dostring(table, write, buffer, lenp, ppos);
++
++	kfree(buf);
++	mutex_unlock(&stats_mutex);
++
++	return ret;
++}
++
++static void softirq_throttle_init(void)
++{
++	raw_spin_lock_init(&si_throttle.lock);
++	softirq_throttle_update();
++}
++
++static inline int check_softirq_throttled(u64 start_time)
++{
++	u64 now = ktime_get_mono_fast_ns();
++	u64 p_start = __this_cpu_read(si_time_start);
++	u64 used = __this_cpu_read(si_time_used);
++	u64 blocked = __this_cpu_read(si_blocked_until);
++	u64 chunk = now - start_time;
++
++	if (blocked && now < blocked) {
++		return 1;
++	} else if (blocked) {
++		__this_cpu_write(si_blocked_until, 0);
++		__this_cpu_inc(softirq_stats_data.free_cnt);
++	}
++
++	used += chunk;
++
++        if (si_throttle.runtime != (u64)-1LL && used >= si_throttle.runtime) {
++                __this_cpu_write(si_blocked_until, now + (u64)sysctl_softirq_block_ms * 1000000ULL);
++                __this_cpu_inc(softirq_stats_data.block_cnt);
++                return 1;
++        }
++
++        if (now - p_start >= si_throttle.period) {
++                __this_cpu_write(si_time_start, now);
++                __this_cpu_write(si_time_used, chunk);
++                return 0;
++        }
++
++	__this_cpu_write(si_time_used, used);
++	return 0;
++}
++#endif
++
+ /*
+  * we cannot loop indefinitely here to avoid userspace starvation,
+  * but we also don't want to introduce a worst case 1/HZ latency
+@@ -256,6 +427,11 @@
+ 	__u32 pending;
+ 	int softirq_bit;
+ 
++	/* patched 2026 */
++	u64 start_ns = ktime_get_mono_fast_ns();
++	max_restart = 10;
++	/* patched 2026 */
++
+ 	/*
+ 	 * Mask out PF_MEMALLOC as the current task context is borrowed for the
+ 	 * softirq. A softirq handled, such as network RX, might set PF_MEMALLOC
+@@ -307,13 +483,35 @@
+ 
+ 	pending = local_softirq_pending();
+ 	if (pending) {
+-		if (time_before(jiffies, end) && !need_resched() &&
+-		    --max_restart)
++		if (ktime_get_mono_fast_ns() - start_ns < 2000000 && !need_resched() && --max_restart)
+ 			goto restart;
+ 
++                #ifdef CONFIG_SOFTIRQ_THROTTLE
++                if (check_softirq_throttled(start_ns)) {
++                        unsigned int net_mask = 0;
++			if (sysctl_softirq_throttle_mask & BIT(0))
++				net_mask |= (1 << NET_TX_SOFTIRQ);
++			if (sysctl_softirq_throttle_mask & BIT(1))
++				net_mask |= (1 << NET_RX_SOFTIRQ);
++
++                        if (net_mask && (pending & net_mask)) {
++				// would CFS be isolating this cpu by the kstat.
++				if (pending & (1 << NET_RX_SOFTIRQ)) {
++					kstat_incr_softirqs_this_cpu(NET_RX_SOFTIRQ);
++				}
++				if (pending & (1 << NET_TX_SOFTIRQ)) {
++                                        kstat_incr_softirqs_this_cpu(NET_TX_SOFTIRQ);
++                                }
++
++                                goto skip_restart;
++                        }
++                }
++                #endif
++
+ 		wakeup_softirqd();
+ 	}
+ 
++skip_restart:
+ 	lockdep_softirq_end(in_hardirq);
+ 	account_irq_exit_time(current);
+ 	__local_bh_enable(SOFTIRQ_OFFSET);
+@@ -572,10 +770,63 @@
+ }
+ EXPORT_SYMBOL(tasklet_kill);
+ 
++#ifdef CONFIG_SOFTIRQ_THROTTLE
++static struct ctl_table softirq_throttle_table[] = {
++	{
++		.procname   = "softirq_period_ms",
++		.data       = &sysctl_softirq_period_ms,
++		.maxlen     = sizeof(unsigned int),
++		.mode       = 0644,
++		.proc_handler   = softirq_throttle_handler,
++	},
++	{
++		.procname   = "softirq_runtime_ms",
++		.data       = &sysctl_softirq_runtime_ms,
++		.maxlen     = sizeof(int),
++		.mode       = 0644,
++		.proc_handler   = softirq_throttle_handler,
++	},
++	{
++		.procname   = "softirq_block_ms",
++		.data       = &sysctl_softirq_block_ms,
++		.maxlen     = sizeof(unsigned int),
++		.mode       = 0644,
++		.proc_handler   = softirq_throttle_handler,
++	},
++	{
++		.procname   = "softirq_throttle_mask",
++		.data       = &sysctl_softirq_throttle_mask,
++		.maxlen     = sizeof(unsigned int),
++		.mode       = 0644, 
++		.proc_handler   = softirq_throttle_handler,
++	},
++	{
++		.procname   = "softirq_stats",
++		.data       = NULL,
++		.maxlen     = 0,
++		.mode       = 0444, 
++		.proc_handler   = sysctl_softirq_stats_handler,
++	},
++	{ }
++};
++
++static __init int softirq_throttle_sysctl_init(void)
++{
++	register_sysctl_init("kernel", softirq_throttle_table);
++	return 0;
++}
++// 注册到内核早期的 initcall 钩子中
++early_initcall(softirq_throttle_sysctl_init);
++#endif
++
+ void __init softirq_init(void)
+ {
+ 	int cpu;
+ 
++	#ifdef CONFIG_SOFTIRQ_THROTTLE
++	softirq_throttle_init();
++	#endif
++
+ 	for_each_possible_cpu(cpu) {
+ 		per_cpu(tasklet_vec, cpu).tail =
+ 			&per_cpu(tasklet_vec, cpu).head;
+@@ -592,8 +843,19 @@
+ 	return local_softirq_pending();
+ }
+ 
++/* patched 2026 */
++#include <linux/netdevice.h>
++extern int netdev_max_backlog;
++DECLARE_PER_CPU(struct softnet_data, softnet_data);
++static DEFINE_PER_CPU(unsigned int, ksoftirq_yield_streak);
++/* patched 2026 */
+ static void run_ksoftirqd(unsigned int cpu)
+ {
++        #ifdef CONFIG_NET
++        unsigned int qlen;
++	unsigned int streak;
++        #endif
++	
+ 	local_irq_disable();
+ 	if (local_softirq_pending()) {
+ 		/*
+@@ -601,6 +863,28 @@
+ 		 * in the task stack here.
+ 		 */
+ 		__do_softirq();
++		/* patched 2026 */
++		#ifdef CONFIG_NET
++		/*qlen = __this_cpu_read(softnet_data.input_pkt_queue.qlen);
++		if (qlen > (netdev_max_backlog >> 1)) { // 1/2 max_backlog
++			streak = __this_cpu_read(ksoftirq_yield_streak) + 1;
++			if (streak >= 3) {
++				__this_cpu_write(ksoftirq_yield_streak, 0);
++				local_irq_enable();
++				yield();
++				return;
++			} else {
++				__this_cpu_write(ksoftirq_yield_streak, streak);
++				local_irq_enable();
++				set_tsk_need_resched(current);
++				return;
++			}
++		} else {
++			if (__this_cpu_read(ksoftirq_yield_streak) > 0)
++				__this_cpu_write(ksoftirq_yield_streak, 0);
++		}*/
++		#endif
++		/* patched 2026 */
+ 		local_irq_enable();
+ 		cond_resched();
+ 		return;
