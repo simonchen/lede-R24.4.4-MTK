@@ -28,8 +28,8 @@
  
  static inline struct task_struct *this_cpu_ksoftirqd(void)
 --- a/kernel/softirq.c	2024-03-27 06:23:12.000000000 +0800
-+++ b/kernel/softirq.c	2026-06-11 23:34:16.449488118 +0800
-@@ -61,6 +61,177 @@
++++ b/kernel/softirq.c	2026-06-13 15:18:56.095198640 +0800
+@@ -61,6 +61,183 @@
  	"TASKLET", "SCHED", "HRTIMER", "RCU"
  };
  
@@ -42,6 +42,9 @@
 +struct softirq_stats {
 +	u64 block_cnt;
 +	u64 free_cnt;
++        u64 rx_block_cnt;
++        u64 tx_block_cnt;
++	u64 rcu_skip_cnt;
 +};
 +
 +struct softnet_throttle_data {
@@ -140,7 +143,7 @@
 +		 "runtime_ms : " COLOR_WHITE "%d ms\n" COLOR_RESTORE
 +		 "block_ms   : " COLOR_WHITE "%u ms\n\n" COLOR_RESTORE
 +		 COLOR_BLUE "=== Per-CPU Live Telemetry Stats ===\n" COLOR_RESTORE
-+		 "cpu_id    blocked_count         freed_count\n",
++		 "cpu_id    blocked_count    freed_count    rx_blocked    tx_blocked    rcu_skipped\n",
 +		 sysctl_softirq_throttle_mask,
 +		 sysctl_softirq_period_ms, 
 +		 sysctl_softirq_runtime_ms, 
@@ -149,9 +152,12 @@
 +	for_each_possible_cpu(cpu) {
 +		u64 b_cnt = per_cpu(softirq_stats_data, cpu).block_cnt;
 +		u64 f_cnt = per_cpu(softirq_stats_data, cpu).free_cnt;
++		u64 rx_cnt = per_cpu(softirq_stats_data, cpu).rx_block_cnt;
++		u64 tx_cnt = per_cpu(softirq_stats_data, cpu).tx_block_cnt;
++		u64 rcu_cnt = per_cpu(softirq_stats_data, cpu).rcu_skip_cnt;
 +
-+		snprintf(buf + strlen(buf), total_len - strlen(buf), "cpu %d:    " COLOR_YELLOW "%-20llu" COLOR_GREEN "  %-20llu" COLOR_RESTORE "\n",
-+			       cpu, b_cnt, f_cnt);
++		snprintf(buf + strlen(buf), total_len - strlen(buf), "cpu %d:    " COLOR_YELLOW "%-20llu" COLOR_GREEN "  %-15llu" COLOR_YELLOW "%-14llu" "%-14llu" COLOR_GREEN "%-15llu" COLOR_RESTORE "\n",
++			       cpu, b_cnt, f_cnt, rx_cnt, tx_cnt, rcu_cnt);
 +	}
 +
 +	table->data = buf;
@@ -207,7 +213,7 @@
  /*
   * we cannot loop indefinitely here to avoid userspace starvation,
   * but we also don't want to introduce a worst case 1/HZ latency
-@@ -256,6 +427,11 @@
+@@ -256,6 +433,11 @@
  	__u32 pending;
  	int softirq_bit;
  
@@ -219,7 +225,7 @@
  	/*
  	 * Mask out PF_MEMALLOC as the current task context is borrowed for the
  	 * softirq. A softirq handled, such as network RX, might set PF_MEMALLOC
-@@ -307,13 +483,35 @@
+@@ -307,13 +489,41 @@
  
  	pending = local_softirq_pending();
  	if (pending) {
@@ -230,23 +236,29 @@
  
 +                #ifdef CONFIG_SOFTIRQ_THROTTLE
 +                if (check_softirq_throttled(start_ns)) {
-+                        unsigned int net_mask = 0;
-+			if (sysctl_softirq_throttle_mask & BIT(0))
-+				net_mask |= (1 << NET_TX_SOFTIRQ);
-+			if (sysctl_softirq_throttle_mask & BIT(1))
-+				net_mask |= (1 << NET_RX_SOFTIRQ);
++			if (pending & (1 << RCU_SOFTIRQ)) {
++				__this_cpu_inc(softirq_stats_data.rcu_skip_cnt);
++			} else {
++				unsigned int net_mask = 0;
++				if (sysctl_softirq_throttle_mask & BIT(0))
++					net_mask |= (1 << NET_TX_SOFTIRQ);
++				if (sysctl_softirq_throttle_mask & BIT(1))
++					net_mask |= (1 << NET_RX_SOFTIRQ);
 +
-+                        if (net_mask && (pending & net_mask)) {
-+				// would CFS be isolating this cpu by the kstat.
-+				if (pending & (1 << NET_RX_SOFTIRQ)) {
-+					kstat_incr_softirqs_this_cpu(NET_RX_SOFTIRQ);
++				if (net_mask && (pending & net_mask)) {
++					// would CFS be isolating this cpu by the kstat.
++					if (pending & (1 << NET_RX_SOFTIRQ)) {
++						kstat_incr_softirqs_this_cpu(NET_RX_SOFTIRQ);
++						__this_cpu_inc(softirq_stats_data.rx_block_cnt);
++					}
++					if (pending & (1 << NET_TX_SOFTIRQ)) {
++						kstat_incr_softirqs_this_cpu(NET_TX_SOFTIRQ);
++						__this_cpu_inc(softirq_stats_data.tx_block_cnt);
++					}
++
++					goto skip_restart;
 +				}
-+				if (pending & (1 << NET_TX_SOFTIRQ)) {
-+                                        kstat_incr_softirqs_this_cpu(NET_TX_SOFTIRQ);
-+                                }
-+
-+                                goto skip_restart;
-+                        }
++			}
 +                }
 +                #endif
 +
@@ -257,7 +269,7 @@
  	lockdep_softirq_end(in_hardirq);
  	account_irq_exit_time(current);
  	__local_bh_enable(SOFTIRQ_OFFSET);
-@@ -572,10 +770,63 @@
+@@ -572,10 +782,63 @@
  }
  EXPORT_SYMBOL(tasklet_kill);
  
@@ -321,7 +333,7 @@
  	for_each_possible_cpu(cpu) {
  		per_cpu(tasklet_vec, cpu).tail =
  			&per_cpu(tasklet_vec, cpu).head;
-@@ -592,8 +843,19 @@
+@@ -592,8 +855,19 @@
  	return local_softirq_pending();
  }
  
@@ -341,7 +353,7 @@
  	local_irq_disable();
  	if (local_softirq_pending()) {
  		/*
-@@ -601,6 +863,28 @@
+@@ -601,6 +875,28 @@
  		 * in the task stack here.
  		 */
  		__do_softirq();
@@ -370,3 +382,288 @@
  		local_irq_enable();
  		cond_resched();
  		return;
+--- a/net/core/dev.c	2026-06-14 05:43:07.863400432 +0800
++++ b/net/core/dev.c	2026-06-14 05:41:43.339013398 +0800
+@@ -4441,6 +4441,241 @@
+ }
+ EXPORT_SYMBOL_GPL(do_xdp_generic);
+ 
++#ifdef CONFIG_SOFTIRQ_THROTTLE
++static int copy_of_netif_rx_internal(struct sk_buff *skb)
++{
++        int ret;
++
++        net_timestamp_check(READ_ONCE(netdev_tstamp_prequeue), skb);
++
++        trace_netif_rx(skb);
++
++#ifdef CONFIG_RPS
++        if (static_branch_unlikely(&rps_needed)) {
++                struct rps_dev_flow voidflow, *rflow = &voidflow;
++                int cpu;
++
++                preempt_disable();
++                rcu_read_lock();
++
++                cpu = get_rps_cpu(skb->dev, skb, &rflow);
++                if (cpu < 0)
++                        cpu = smp_processor_id();
++
++                ret = enqueue_to_backlog(skb, cpu, &rflow->last_qtail);
++
++                rcu_read_unlock();
++                preempt_enable();
++        } else
++#endif
++        {
++                unsigned int qtail;
++
++                ret = enqueue_to_backlog(skb, get_cpu(), &qtail);
++                put_cpu();
++        }
++        return ret;
++}
++
++static DEFINE_PER_CPU(struct sk_buff_head, mtk_batch_queue);
++static DEFINE_PER_CPU(u8, mtk_batch_count) = 0;
++static DEFINE_PER_CPU(u64, last_flush_ns) = 0;
++
++int sysctl_rx_enable_batch = 0;
++unsigned int sysctl_rx_batch_us = 10;
++unsigned int sysctl_rx_max_batch_cnt = 4;
++DEFINE_PER_CPU(u64, rx_success_batch_sum) = 0;
++
++static int __netif_rx_internal(struct sk_buff *skb, bool flush)
++{
++	int ret = NET_RX_SUCCESS;
++	unsigned int batch_cnt;
++	struct sk_buff_head *batch_q;
++	u64 now_ns;
++
++	if (skb) {
++		net_timestamp_check(READ_ONCE(netdev_tstamp_prequeue), skb);
++	}
++
++#ifdef CONFIG_RPS
++	preempt_disable();
++#endif
++	batch_q = this_cpu_ptr(&mtk_batch_queue);
++
++	if (unlikely(!batch_q->next)) {
++		skb_queue_head_init(batch_q);
++	}
++
++	if (skb) {
++		__skb_queue_tail(batch_q, skb);
++		__this_cpu_inc(mtk_batch_count);
++	}
++	batch_cnt = __this_cpu_read(mtk_batch_count);
++
++	now_ns = ktime_get_mono_fast_ns();
++
++	if (!flush && likely(batch_cnt < sysctl_rx_max_batch_cnt && 
++		(now_ns - __this_cpu_read(last_flush_ns)) < sysctl_rx_batch_us*1000)) {
++#ifdef CONFIG_RPS
++		preempt_enable();
++#endif
++		return NET_RX_SUCCESS;
++	}
++
++#ifdef CONFIG_RPS
++	rcu_read_lock();
++#endif
++	__this_cpu_write(last_flush_ns, now_ns);
++
++	while ((skb = __skb_dequeue(batch_q))) {
++#ifdef CONFIG_RPS
++		if (static_branch_unlikely(&rps_needed)) {
++			struct rps_dev_flow voidflow, *rflow = &voidflow;
++			int cpu;
++
++			cpu = get_rps_cpu(skb->dev, skb, &rflow);
++			if (cpu < 0)
++				cpu = smp_processor_id();
++			ret = enqueue_to_backlog(skb, cpu, &rflow->last_qtail);
++		} else
++#endif
++		{
++			unsigned int qtail;
++			ret = enqueue_to_backlog(skb, smp_processor_id(), &qtail);
++			put_cpu();
++		}
++	}
++
++	if (batch_cnt >= sysctl_rx_max_batch_cnt)
++		__this_cpu_inc(rx_success_batch_sum); // actual aggr num!
++	__this_cpu_write(mtk_batch_count, 0);
++
++#ifdef CONFIG_RPS
++	rcu_read_unlock();
++	preempt_enable();
++#endif
++	return ret;
++}
++
++static int netif_rx_internal(struct sk_buff *skb)
++{
++	if (!sysctl_rx_enable_batch ||
++		!skb || !skb->dev || (skb->dev->flags & IFF_LOOPBACK) || skb->dev->rtnl_link_ops)
++		return copy_of_netif_rx_internal(skb);
++
++	return __netif_rx_internal(skb, false); // flush = false
++}
++
++static void netif_rx_batch_flush_remote(void *info)
++{
++	unsigned long flags;
++	local_irq_save(flags);
++
++	__netif_rx_internal(NULL, true);
++
++	local_irq_restore(flags);
++}
++
++static struct timer_list rx_flush_timer;
++#define MAX_RX_BATCH_FLUSH_MS 10 // ms
++DEFINE_PER_CPU(struct __call_single_data, rx_flush_csd);
++static void netif_rx_flush_timer_fn(struct timer_list *t)
++{
++	int cpu;
++
++	for_each_online_cpu(cpu) {
++		if (per_cpu(mtk_batch_count, cpu) > 0) {
++			struct __call_single_data *csd = &per_cpu(rx_flush_csd, cpu);
++			smp_call_function_single_async(cpu, csd);
++		}
++	}
++
++	mod_timer(&rx_flush_timer, jiffies + msecs_to_jiffies(MAX_RX_BATCH_FLUSH_MS));
++}
++
++int sysctl_netif_rx_handler(struct ctl_table *table, int write, void *buffer,
++                                 size_t *lenp, loff_t *ppos)
++{
++        static DEFINE_MUTEX(mutex);
++        int cpu; int ret;
++        char *buf;
++        int total_len = 256;
++
++        if (write)
++                return -EPERM;
++
++        mutex_lock(&mutex);
++        buf = kmalloc(total_len, GFP_KERNEL);
++        if (!buf) {
++                mutex_unlock(&mutex);
++                return -ENOMEM;
++        }
++
++        snprintf(buf, total_len, "\n");
++	snprintf(buf + strlen(buf), total_len - strlen(buf), 
++			"NETIF RX BATCH CONFIG: \nrx_batch_us: %u\trx_max_batch_cnt: %hhu\n\n", 
++			sysctl_rx_batch_us, sysctl_rx_max_batch_cnt);
++
++        for_each_possible_cpu(cpu) {
++                u64 cnt = per_cpu(rx_success_batch_sum, cpu);
++
++                snprintf(buf + strlen(buf), total_len - strlen(buf), "cpu %d: %llu\t",
++                               cpu, cnt);
++        }
++
++        table->data = buf;
++        table->maxlen = strlen(buf) + 1;
++        ret = proc_dostring(table, write, buffer, lenp, ppos);
++
++        kfree(buf);
++        mutex_unlock(&mutex);
++
++        return ret;
++}
++
++static struct ctl_table netif_rx_batch_table[] = {
++        {
++                .procname   = "rx_batch_us",
++                .data       = &sysctl_rx_batch_us,
++                .maxlen     = sizeof(unsigned int),
++                .mode       = 0644,
++                .proc_handler = proc_dointvec,
++        },
++        {
++                .procname   = "rx_max_batch_pkts",
++                .data       = &sysctl_rx_max_batch_cnt,
++                .maxlen     = sizeof(unsigned int),
++                .mode       = 0644,
++		.proc_handler = proc_douintvec_minmax,
++		.extra1       = SYSCTL_ONE,
++		.extra2       = SYSCTL_INT_MAX,
++        },
++	{
++		.procname     = "rx_enable_batch",
++		.data         = &sysctl_rx_enable_batch,
++		.maxlen       = sizeof(int),
++		.mode         = 0644,
++		.proc_handler = proc_dointvec_minmax,
++		.extra1       = SYSCTL_ZERO,
++		.extra2       = SYSCTL_ONE,
++	},
++        {
++                .procname   = "rx_batch_stats",
++                .data       = NULL,
++                .maxlen     = 0,
++                .mode       = 0444,
++                .proc_handler = sysctl_netif_rx_handler,
++        },
++        { }
++};
++
++static __init int netif_rx_batch_sysctl_init(void)
++{
++        register_sysctl_init("net/core", netif_rx_batch_table);
++        return 0;
++}
++early_initcall(netif_rx_batch_sysctl_init);
++#else /* CONFIG_SOFTIRQ_THROTTLE */
+ static int netif_rx_internal(struct sk_buff *skb)
+ {
+ 	int ret;
+@@ -4475,6 +4710,7 @@
+ 	}
+ 	return ret;
+ }
++#endif
+ 
+ /**
+  *	netif_rx	-	post buffer to the network code
+@@ -6546,7 +6782,11 @@
+ 	list_splice(&list, &sd->poll_list);
+ 	if (!list_empty(&sd->poll_list))
+ 		__raise_softirq_irqoff(NET_RX_SOFTIRQ);
+-
++#ifdef CONFIG_SOFTIRQ_THROTTLE
++        if (__this_cpu_read(mtk_batch_count) > 0 && (ktime_get_mono_fast_ns() - __this_cpu_read(last_flush_ns)) >= (sysctl_rx_batch_us * 1000)) {
++                __netif_rx_internal(NULL, true);
++	}
++#endif
+ 	net_rps_action_and_irq_enable(sd);
+ out:
+ 	__kfree_skb_flush();
+@@ -10482,6 +10722,19 @@
+ 				       NULL, dev_cpu_dead);
+ 	WARN_ON(rc < 0);
+ 	rc = 0;
++
++#ifdef CONFIG_SOFTIRQ_THROTTLE
++	/*
++	for_each_possible_cpu(i) {
++		struct __call_single_data *csd = &per_cpu(rx_flush_csd, i);
++		
++		csd->func = netif_rx_batch_flush_remote; 
++		csd->info = NULL;                      
++	}
++	timer_setup(&rx_flush_timer, netif_rx_flush_timer_fn, 0);
++	mod_timer(&rx_flush_timer, jiffies + msecs_to_jiffies(MAX_RX_BATCH_FLUSH_MS));
++	*/
++#endif
+ out:
+ 	return rc;
+ }
